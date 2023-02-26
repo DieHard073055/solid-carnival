@@ -1,0 +1,2 @@
+# solid-carnival
+trade simulator
