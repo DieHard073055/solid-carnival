@@ -9,11 +9,8 @@ pub struct Transaction {
     qty: Decimal,
 }
 
-impl Transaction{
-    pub fn new(ts: i64,
-               symbol: String,
-               price: Decimal,
-               qty: Decimal) -> Self{
+impl Transaction {
+    pub fn new(ts: i64, symbol: String, price: Decimal, qty: Decimal) -> Self {
         Transaction {
             ts,
             symbol,
