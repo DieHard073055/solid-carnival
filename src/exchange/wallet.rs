@@ -1,8 +1,8 @@
 use crate::exchange::transaction::Transaction;
-use std::collections::HashMap;
+use chrono::Utc;
 use rust_decimal::prelude::Decimal;
 use rust_decimal_macros::dec;
-use chrono::{Utc};
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct Wallet {
@@ -32,6 +32,15 @@ impl Wallet {
         self.transactions.push(tx.clone());
         self.update_wallet(tx);
     }
+    pub fn has_funds_for_order(&self, asset: &str, required_amount: Decimal) -> Option<Decimal> {
+        if let Some(funds) = self.wallets.get(asset) {
+            if funds >= &required_amount {
+                return Some(funds.clone());
+            }
+        }
+
+        None
+    }
 }
 #[cfg(test)]
 mod test {
@@ -52,8 +61,14 @@ mod test {
             dec!(23456.8),
             dec!(1.000000000000000000001),
         ));
-        assert_eq!(w.get_wallets().get("BTC").unwrap(), &dec!(2.000000000000000000002));
-        assert_ne!(w.get_wallets().get("BTC").unwrap(), &dec!(1.000000000000000000001));
+        assert_eq!(
+            w.get_wallets().get("BTC").unwrap(),
+            &dec!(2.000000000000000000002)
+        );
+        assert_ne!(
+            w.get_wallets().get("BTC").unwrap(),
+            &dec!(1.000000000000000000001)
+        );
     }
 
     #[test]
@@ -87,7 +102,6 @@ mod test {
 
     #[test]
     fn test_multi_wallet_add_and_subtract() {
-
         let mut w = Wallet::new();
         // start with 10 BTC and 10 ETH
         w.add(&Transaction::new(
@@ -142,6 +156,34 @@ mod test {
 
         assert_eq!(w.get_wallets().get("ETH").unwrap(), &dec!(30));
         assert_eq!(w.get_wallets().get("BTC").unwrap(), &dec!(20));
+    }
 
+    #[test]
+    fn test_has_funds_for_order() {
+        let mut w = Wallet::new();
+        w.add(&Transaction::new(
+            0i64,
+            String::from("BTC"),
+            dec!(0),
+            dec!(10),
+        ));
+        assert_eq!(w.has_funds_for_order("BTC", dec!(9)), Some(dec!(10)));
+        let mut w = Wallet::new();
+        w.add(&Transaction::new(
+            0i64,
+            String::from("XRP"),
+            dec!(0),
+            dec!(10_000),
+        ));
+        w.add(&Transaction::new(
+            0i64,
+            String::from("ETH"),
+            dec!(0),
+            dec!(10),
+        ));
+        assert_eq!(w.has_funds_for_order("XRP", dec!(12_000)), None);
+        assert_eq!(w.has_funds_for_order("ETH", dec!(12_000)), None);
+        assert_eq!(w.has_funds_for_order("XRP", dec!(9_000)), Some(dec!(10_000)));
+        assert_eq!(w.has_funds_for_order("ETH", dec!(9)), Some(dec!(10)));
     }
 }
