@@ -183,7 +183,10 @@ mod test {
         ));
         assert_eq!(w.has_funds_for_order("XRP", dec!(12_000)), None);
         assert_eq!(w.has_funds_for_order("ETH", dec!(12_000)), None);
-        assert_eq!(w.has_funds_for_order("XRP", dec!(9_000)), Some(dec!(10_000)));
+        assert_eq!(
+            w.has_funds_for_order("XRP", dec!(9_000)),
+            Some(dec!(10_000))
+        );
         assert_eq!(w.has_funds_for_order("ETH", dec!(9)), Some(dec!(10)));
     }
 }
