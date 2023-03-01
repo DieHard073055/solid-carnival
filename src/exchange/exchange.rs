@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::error;
 
+use crate::exchange::order::{Order, OrderDirection, OrderStatus, OrderType};
 use crate::exchange::transaction::Transaction;
 use crate::exchange::wallet::Wallet;
 use chrono::Utc;
@@ -20,101 +21,6 @@ get_wallet:         take a look at the portfolios performance
 
 
  */
-#[derive(Debug, Clone, PartialEq)]
-pub enum OrderType {
-    Market,
-    Limit,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OrderDirection {
-    Buy,
-    Sell,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OrderStatus {
-    Pending,
-    PartiallyFilled(u8),
-    Filled,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Order {
-    ts: i64,
-    order_type: OrderType,
-    direction: OrderDirection,
-    pair: String,
-    price: Option<Decimal>,
-    qty: Decimal,
-    status: OrderStatus,
-}
-
-impl Order {
-    fn new(
-        ts: i64,
-        order_type: OrderType,
-        direction: OrderDirection,
-        pair: String,
-        price: Option<Decimal>,
-        qty: Decimal,
-        status: OrderStatus,
-    ) -> Self {
-        Order {
-            ts,
-            order_type,
-            direction,
-            pair,
-            price,
-            qty,
-            status,
-        }
-    }
-    pub fn new_limit_buy(pair: &str, price: Decimal, qty: Decimal) -> Self {
-        Order::new(
-            Utc::now().timestamp(),
-            OrderType::Limit,
-            OrderDirection::Buy,
-            String::from(pair),
-            Some(price),
-            qty,
-            OrderStatus::Pending,
-        )
-    }
-    pub fn new_limit_sell(pair: &str, price: Decimal, qty: Decimal) -> Self {
-        Order::new(
-            Utc::now().timestamp(),
-            OrderType::Limit,
-            OrderDirection::Sell,
-            String::from(pair),
-            Some(price),
-            qty,
-            OrderStatus::Pending,
-        )
-    }
-    pub fn new_market_buy(pair: &str, price: Decimal, qty: Decimal) -> Self {
-        Order::new(
-            Utc::now().timestamp(),
-            OrderType::Market,
-            OrderDirection::Buy,
-            String::from(pair),
-            None,
-            qty,
-            OrderStatus::Pending,
-        )
-    }
-    pub fn new_market_sell(pair: &str, price: Decimal, qty: Decimal) -> Self {
-        Order::new(
-            Utc::now().timestamp(),
-            OrderType::Market,
-            OrderDirection::Sell,
-            String::from(pair),
-            None,
-            qty,
-            OrderStatus::Pending,
-        )
-    }
-}
 
 pub struct Exchange {
     active_orders: HashMap<String, Vec<Order>>,
@@ -122,7 +28,7 @@ pub struct Exchange {
 }
 
 #[derive(Debug, Clone)]
-enum ExchangeError{
+enum ExchangeError {
     FailedToObtainAssetPair,
     InsufficientFunds,
     FailedToPlaceOrder,
@@ -157,34 +63,36 @@ impl Exchange {
     pub fn get_wallet(&self) -> &HashMap<String, Decimal> {
         &self.wallet.get_wallets()
     }
-    pub fn get_orders(&self) -> &HashMap<String, Vec<Order>>{
+    pub fn get_orders(&self) -> &HashMap<String, Vec<Order>> {
         &self.active_orders
     }
-    pub fn place_limit_buy_order(&mut self, pair: &str, price: Decimal, qty: Decimal) -> Result<Order, Box<dyn std::error::Error>> {
+    pub fn place_limit_buy_order(
+        &mut self,
+        pair: &str,
+        price: Decimal,
+        qty: Decimal,
+    ) -> Result<Order, Box<dyn std::error::Error>> {
         // TODO: create an error message for failing to place a buy order
         // Get the base asset and the quote asset
         let (base, quote) = Exchange::get_asset_pair(pair)?;
         // Check if the wallet has the required funds
-        if let None = self.wallet.has_funds_for_order(quote, price * qty){
+        if let None = self.wallet.has_funds_for_order(quote, price * qty) {
             return Err(ExchangeError::InsufficientFunds.into());
         }
 
         // Create the order and add to the orders vector? hashmap?
         self.active_orders.entry(pair.to_string()).or_insert(vec![]);
 
-        if let Some(mut order_list) = self.active_orders.get_mut(pair){
+        if let Some(mut order_list) = self.active_orders.get_mut(pair) {
             let new_order = Order::new_limit_buy(pair, price, qty);
-            order_list.push(
-                new_order.clone()
-            );
-            return Ok(new_order)
+            order_list.push(new_order.clone());
+            return Ok(new_order);
         };
 
         Err(ExchangeError::FailedToPlaceOrder.into())
-
     }
 
-    pub fn tick(&mut self){
+    pub fn tick(&mut self) {
         // TODO: create an error for all the possible failures
         // Use the price feed object to get the price for all the coins we are listening for
         // Check if any of the orders have been hit
@@ -235,7 +143,6 @@ mod test {
         assert_eq!(wallets.get("USDC"), Some(&dec!(3_000)));
     }
 
-
     #[test]
     fn test_place_limit_buy_order() {
         let mut ex = Exchange::new().with_capital(vec![(String::from("BTC"), dec!(12.0))]);
@@ -245,9 +152,11 @@ mod test {
         let place_order_pair = "ETHBTC";
         let place_order_price = dec!(0.0093);
         let place_order_qty = dec!(1);
-        let order = ex.place_limit_buy_order(place_order_pair, place_order_price, place_order_qty).unwrap();
+        let order = ex
+            .place_limit_buy_order(place_order_pair, place_order_price, place_order_qty)
+            .unwrap();
         let order_map = ex.get_orders();
-        if let Some((_, orders)) = order_map.iter().next(){
+        if let Some((_, orders)) = order_map.iter().next() {
             if let Some(order) = orders.get(0) {
                 assert_eq!(order.order_type, OrderType::Limit);
                 assert_eq!(order.direction, OrderDirection::Buy);
