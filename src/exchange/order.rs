@@ -51,48 +51,57 @@ impl Order {
             status,
         }
     }
-    pub fn new_limit_buy(pair: &str, price: Decimal, qty: Decimal) -> Self {
+    pub fn new_order(
+        pair: &str,
+        price: Option<Decimal>,
+        qty: Decimal,
+        direction: OrderDirection,
+        order_type: OrderType,
+    ) -> Self {
         Order::new(
             Utc::now().timestamp(),
-            OrderType::Limit,
-            OrderDirection::Buy,
+            order_type,
+            direction,
             String::from(pair),
-            Some(price),
+            price,
             qty,
             OrderStatus::Pending,
+        )
+    }
+    pub fn new_limit_buy(pair: &str, price: Decimal, qty: Decimal) -> Self {
+        Order::new_order(
+            pair,
+            Some(price),
+            qty,
+            OrderDirection::Buy,
+            OrderType::Limit,
         )
     }
     pub fn new_limit_sell(pair: &str, price: Decimal, qty: Decimal) -> Self {
-        Order::new(
-            Utc::now().timestamp(),
-            OrderType::Limit,
-            OrderDirection::Sell,
-            String::from(pair),
+        Order::new_order(
+            pair,
             Some(price),
             qty,
-            OrderStatus::Pending,
+            OrderDirection::Sell,
+            OrderType::Limit,
         )
     }
     pub fn new_market_buy(pair: &str, price: Decimal, qty: Decimal) -> Self {
-        Order::new(
-            Utc::now().timestamp(),
-            OrderType::Market,
-            OrderDirection::Buy,
-            String::from(pair),
-            None,
+        Order::new_order(
+            pair,
+            Some(price),
             qty,
-            OrderStatus::Pending,
+            OrderDirection::Buy,
+            OrderType::Market,
         )
     }
     pub fn new_market_sell(pair: &str, price: Decimal, qty: Decimal) -> Self {
-        Order::new(
-            Utc::now().timestamp(),
-            OrderType::Market,
-            OrderDirection::Sell,
-            String::from(pair),
-            None,
+        Order::new_order(
+            pair,
+            Some(price),
             qty,
-            OrderStatus::Pending,
+            OrderDirection::Sell,
+            OrderType::Market,
         )
     }
 }
