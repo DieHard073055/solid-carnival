@@ -104,4 +104,7 @@ impl Order {
             OrderType::Market,
         )
     }
+    pub fn filled(&mut self){
+        self.status = OrderStatus::Filled;
+    }
 }
