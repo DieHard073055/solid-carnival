@@ -4,6 +4,26 @@ use rust_decimal::prelude::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
+/**
+This code defines a Wallet struct that tracks a user's wallet transactions and balances.
+It allows adding transactions to the wallet, updating the wallet balance based on those transactions,
+and checking if there are sufficient funds for a trade.
+
+The Wallet struct has two fields: transactions which is a vector of Transaction structs
+representing all the transactions for the wallet, and wallets which is a hashmap with keys being
+asset symbols and values being Decimal types representing the amount of that asset held in the wallet.
+
+The Wallet struct has several methods:
+
+- new() creates a new Wallet instance with an empty list of
+    transactions and an empty hashmap for wallets.
+- get_wallets() returns a reference to the wallets hashmap.
+- update_wallet() updates the balance of the wallets hashmap based on the given Transaction.
+- add() adds a Transaction to the transactions vector and updates the wallet balance based on the
+    given Transaction.
+- has_funds_for_order() checks if there are sufficient funds for a given asset symbol and required
+    amount, and returns the available funds if they are sufficient, otherwise returns None.
+*/
 #[derive(Debug)]
 pub struct Wallet {
     transactions: Vec<Transaction>,
@@ -38,7 +58,6 @@ impl Wallet {
                 return Some(funds.clone());
             }
         }
-
         None
     }
 }
