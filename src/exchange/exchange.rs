@@ -37,13 +37,13 @@ enum ExchangeError {
     FailedToPlaceOrder,
 }
 
+impl error::Error for ExchangeError {}
+
 impl Display for ExchangeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Unable to extract quote asset from the provided pair.")
     }
 }
-
-impl error::Error for ExchangeError {}
 
 impl Exchange {
     pub fn new() -> Self {
@@ -99,14 +99,14 @@ impl Exchange {
         // Check if the wallet has the required funds
         // Todo: For market orders need to get the current price to check funds
         if let Some(price) = wrapped_price {
-            match direction{
+            match direction {
                 OrderDirection::Buy => {
                     if let None = self.wallet.has_funds_for_order(quote, price * qty) {
                         return Err(ExchangeError::InsufficientFunds.into());
                     }
                 }
                 OrderDirection::Sell => {
-                    if let None = self.wallet.has_funds_for_order(base,  qty) {
+                    if let None = self.wallet.has_funds_for_order(base, qty) {
                         return Err(ExchangeError::InsufficientFunds.into());
                     }
                 }
@@ -184,84 +184,152 @@ impl Exchange {
     pub fn tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut transactions_to_be_added: Vec<Transaction> = vec![];
         let active_orders = self.active_orders.clone();
-        for (i, (symbol, price_feed)) in self.price_feeds.clone().into_iter().enumerate() {
+        for (_, (symbol, price_feed)) in self.price_feeds.clone().into_iter().enumerate() {
             let kline_data = if let Some(kline_data) = price_feed.clone().next() {
                 kline_data
             } else {
-                return Err(Box::try_from(format!("{}: no kline data available", symbol))?);
+                return Err(Box::try_from(format!(
+                    "{}: no kline data available",
+                    symbol
+                ))?);
             };
             let (timestamp, _, high, low, _) = kline_data.get_ohlc();
             for order in &active_orders[&symbol] {
-                let order_price = if let Some(order_price) = order.price {
-                    order_price
-                } else {
-                    return Err(Box::try_from(format!("{}: no order price available", symbol))?);
-                };
-
-                let (base, quote) = if let Ok((_base, _quote)) = Exchange::get_asset_pair(&symbol){
-                    (_base, _quote)
-                }else{
-                    return Err(Box::try_from(format!("{}: unable to obtain valid base and quote for pair", symbol))?);
-                };
-                match order.direction {
-                    OrderDirection::Buy => {
-                        let decimal_low =
-                            if let Ok(decimal_low) = Decimal::from_str_exact(low) {
-                                decimal_low
-                            } else {
-                                return Err(Box::try_from(format!("{}: invalid decimal value for low", symbol))?);
-                            };
-
-                        if decimal_low < order_price {
-                            let tx1 = Transaction::new(
-                                timestamp,
-                                base.to_string(),
-                                order_price,
-                                order.qty
-                            );
-                            let tx2 = Transaction::new(
-                                timestamp,
-                                quote.to_string(),
-                                order_price,
-                                (order.qty *  order_price) * dec!(-1)
-                            );
-                            transactions_to_be_added.push(tx1);
-                            transactions_to_be_added.push(tx2);
-                        }
-                    }
-                    OrderDirection::Sell => {
-                        let decimal_high =
-                            if let Ok(decimal_high) = Decimal::from_str_exact(high) {
-                                decimal_high
-                            } else {
-                                return Err(Box::try_from(format!("{}: invalid decimal value for high", symbol))?);
-                            };
-                        if decimal_high > order_price {
-                            let tx1 = Transaction::new(
-                                timestamp,
-                                base.to_string(),
-                                order_price,
-                                order.qty * dec!(-1)
-                            );
-                            let tx2 = Transaction::new(
-                                timestamp,
-                                quote.to_string(),
-                                order_price,
-                                order.qty * order_price
-                            );
-                            transactions_to_be_added.push(tx1);
-                            transactions_to_be_added.push(tx2);
-                        }
-                    }
-                }
+                Self::tick_handle_order(
+                    &mut transactions_to_be_added,
+                    &symbol,
+                    timestamp,
+                    high,
+                    low,
+                    order,
+                )?
             }
         }
-        for tx in transactions_to_be_added{
+        for tx in transactions_to_be_added {
             self.wallet.add(&tx);
         }
         Ok(())
     }
 
+    fn tick_handle_order(
+        mut transactions_to_be_added: &mut Vec<Transaction>,
+        symbol: &String,
+        timestamp: i64,
+        high: &str,
+        low: &str,
+        order: &Order,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let order_price = if let Some(order_price) = order.price {
+            order_price
+        } else {
+            return Err(Box::try_from(format!(
+                "{}: no order price available",
+                symbol
+            ))?);
+        };
+
+        let (base, quote) = if let Ok((_base, _quote)) = Exchange::get_asset_pair(&symbol) {
+            (_base, _quote)
+        } else {
+            return Err(Box::try_from(format!(
+                "{}: unable to obtain valid base and quote for pair",
+                symbol
+            ))?);
+        };
+        match order.direction {
+            OrderDirection::Buy => Self::tick_handle_buy(
+                &mut transactions_to_be_added,
+                &symbol,
+                timestamp,
+                low,
+                order,
+                order_price,
+                base,
+                quote,
+            )?,
+            OrderDirection::Sell => Self::tick_handle_sell(
+                &mut transactions_to_be_added,
+                &symbol,
+                timestamp,
+                high,
+                order,
+                order_price,
+                base,
+                quote,
+            )?,
+        }
+        Ok(())
+    }
+
+    fn tick_handle_sell(
+        transactions_to_be_added: &mut Vec<Transaction>,
+        symbol: &str,
+        timestamp: i64,
+        high: &str,
+        order: &Order,
+        order_price: Decimal,
+        base: &str,
+        quote: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let decimal_high = if let Ok(decimal_high) = Decimal::from_str_exact(high) {
+            decimal_high
+        } else {
+            return Err(Box::try_from(format!(
+                "{}: invalid decimal value for high",
+                symbol
+            ))?);
+        };
+        if decimal_high > order_price {
+            let tx1 = Transaction::new(
+                timestamp,
+                base.to_string(),
+                order_price,
+                order.qty * dec!(-1),
+            );
+            let tx2 = Transaction::new(
+                timestamp,
+                quote.to_string(),
+                order_price,
+                order.qty * order_price,
+            );
+            transactions_to_be_added.push(tx1);
+            transactions_to_be_added.push(tx2);
+        }
+        Ok(())
+    }
+
+    fn tick_handle_buy(
+        transactions_to_be_added: &mut Vec<Transaction>,
+        symbol: &str,
+        timestamp: i64,
+        low: &str,
+        order: &Order,
+        order_price: Decimal,
+        base: &str,
+        quote: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let decimal_low = if let Ok(decimal_low) = Decimal::from_str_exact(low) {
+            decimal_low
+        } else {
+            return Err(Box::try_from(format!(
+                "{}: invalid decimal value for low",
+                symbol
+            ))?);
+        };
+
+        if decimal_low < order_price {
+            let tx1 = Transaction::new(timestamp, base.to_string(), order_price, order.qty);
+            let tx2 = Transaction::new(
+                timestamp,
+                quote.to_string(),
+                order_price,
+                (order.qty * order_price) * dec!(-1),
+            );
+            transactions_to_be_added.push(tx1);
+            transactions_to_be_added.push(tx2);
+        }
+        Ok(())
+    }
 
     pub fn get_asset_pair(pair: &str) -> Result<(&str, &str), Box<dyn error::Error>> {
         let quote_list = [
@@ -346,27 +414,28 @@ mod test {
 
     #[test]
     fn test_tick_with_limit_buy() {
-        let custom_kline_data = vec![
-            BinanceKline::new(
-                1626578400000,
-                "1.0000000",
-                "2.0000000",
-                "0.08000000",
-                "0.15000000",
-                "5000.00000000",
-                1626578500000,
-                "750.00000000",
-                10,
-                "2500.00000000",
-                "2500.00000000",
-                "0.0",
-            ),
-        ];
+        let custom_kline_data = vec![BinanceKline::new(
+            1626578400000,
+            "1.0000000",
+            "2.0000000",
+            "0.08000000",
+            "0.15000000",
+            "5000.00000000",
+            1626578500000,
+            "750.00000000",
+            10,
+            "2500.00000000",
+            "2500.00000000",
+            "0.0",
+        )];
 
         let mut price_feed = PriceFeed::new();
         price_feed.add_price_data(custom_kline_data);
         let mut exchange = Exchange::new()
-            .with_capital(vec![("BTC".to_string(), dec!(1.0)), ("USDT".to_string(), dec!(1.0))])
+            .with_capital(vec![
+                ("BTC".to_string(), dec!(1.0)),
+                ("USDT".to_string(), dec!(1.0)),
+            ])
             .add_price_feed("BTCUSDT".to_string(), price_feed);
 
         // Place a limit buy order
@@ -383,27 +452,28 @@ mod test {
     }
     #[test]
     fn test_tick_with_limit_sell() {
-        let custom_kline_data = vec![
-            BinanceKline::new(
-                1626578400000,
-                "2.90000000",
-                "3.0000000",
-                "2.08000000",
-                "2.815000000",
-                "5000.00000000",
-                1626578500000,
-                "750.00000000",
-                10,
-                "2500.00000000",
-                "2500.00000000",
-                "0.0",
-            ),
-        ];
+        let custom_kline_data = vec![BinanceKline::new(
+            1626578400000,
+            "2.90000000",
+            "3.0000000",
+            "2.08000000",
+            "2.815000000",
+            "5000.00000000",
+            1626578500000,
+            "750.00000000",
+            10,
+            "2500.00000000",
+            "2500.00000000",
+            "0.0",
+        )];
 
         let mut price_feed = PriceFeed::new();
         price_feed.add_price_data(custom_kline_data);
         let mut exchange = Exchange::new()
-            .with_capital(vec![("BTC".to_string(), dec!(1.0)), ("USDT".to_string(), dec!(1.0))])
+            .with_capital(vec![
+                ("BTC".to_string(), dec!(1.0)),
+                ("USDT".to_string(), dec!(1.0)),
+            ])
             .add_price_feed("BTCUSDT".to_string(), price_feed);
 
         // Place a limit buy order
@@ -419,5 +489,4 @@ mod test {
         assert_eq!(wallets["BTC"], dec!(0.0));
         assert_eq!(wallets["USDT"], dec!(3.0));
     }
-
 }
