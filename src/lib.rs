@@ -1,3 +1,5 @@
+mod exchange;
+
 use chrono::Utc;
 use rust_decimal_macros::dec;
 
