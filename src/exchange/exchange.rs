@@ -1,16 +1,13 @@
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
-use std::error;
+use thiserror::Error;
 
-use crate::exchange::order::{Order, OrderDirection, OrderStatus, OrderType};
-use crate::exchange::price_feed::{BinanceKline, PriceFeed};
+use crate::exchange::order::{Order, OrderDirection, OrderType};
+use crate::exchange::price_feed::PriceFeed;
 use crate::exchange::transaction::Transaction;
 use crate::exchange::wallet::Wallet;
-use chrono::Utc;
 use rust_decimal::prelude::Decimal;
-use rust_decimal::Error;
 use rust_decimal_macros::dec;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug};
 /*
 binance mock exchange ?
 
@@ -30,19 +27,23 @@ pub struct Exchange {
     price_feeds: HashMap<String, PriceFeed>,
 }
 
-#[derive(Debug, Clone)]
-enum ExchangeError {
+#[derive(Debug, Clone, Error)]
+pub enum ExchangeError {
+    #[error("Failed to obtain asset pair")]
     FailedToObtainAssetPair,
+    #[error("Insufficient funds")]
     InsufficientFunds,
+    #[error("Failed to place order")]
     FailedToPlaceOrder,
-}
+    #[error("Failed to obtain a valid price")]
+    InvalidPrice,
+    #[error("No KlineData")]
+    NoKlineDataAvailable,
+    #[error("Unable to obtain price from order")]
+    NoOrderPriceAvailable,
+    #[error("Unable to pull price feed")]
+    NoPriceFeed,
 
-impl error::Error for ExchangeError {}
-
-impl Display for ExchangeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Unable to extract quote asset from the provided pair.")
-    }
 }
 
 impl Exchange {
@@ -69,11 +70,12 @@ impl Exchange {
         symbol: String,
         interval: String,
         limit: i32,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, ExchangeError> {
         self.price_feeds
             .entry(symbol.clone())
             .or_insert(PriceFeed::new())
-            .initialize_price_feed(symbol, interval, limit)?;
+            .initialize_price_feed(symbol, interval, limit)
+            .map_err(|_| ExchangeError::NoPriceFeed)?;
         Ok(self)
     }
     pub fn add_price_feed(mut self, symbol: String, price_feed: PriceFeed) -> Self {
@@ -93,7 +95,7 @@ impl Exchange {
         qty: Decimal,
         direction: OrderDirection,
         order_type: OrderType,
-    ) -> Result<Order, Box<dyn std::error::Error>> {
+    ) -> Result<Order, ExchangeError> {
         // Get the base asset and the quote asset
         let (base, quote) = Exchange::get_asset_pair(pair)?;
         // Check if the wallet has the required funds
@@ -102,12 +104,12 @@ impl Exchange {
             match direction {
                 OrderDirection::Buy => {
                     if let None = self.wallet.has_funds_for_order(quote, price * qty) {
-                        return Err(ExchangeError::InsufficientFunds.into());
+                        return Err(ExchangeError::InsufficientFunds);
                     }
                 }
                 OrderDirection::Sell => {
                     if let None = self.wallet.has_funds_for_order(base, qty) {
-                        return Err(ExchangeError::InsufficientFunds.into());
+                        return Err(ExchangeError::InsufficientFunds);
                     }
                 }
             }
@@ -116,20 +118,20 @@ impl Exchange {
         // Create the order and add to the orders hashmap
         self.active_orders.entry(pair.to_string()).or_insert(vec![]);
 
-        if let Some(mut order_list) = self.active_orders.get_mut(pair) {
+        if let Some(order_list) = self.active_orders.get_mut(pair) {
             let new_order = Order::new_order(pair, wrapped_price, qty, direction, order_type);
             order_list.push(new_order.clone());
             return Ok(new_order);
         };
 
-        Err(ExchangeError::FailedToPlaceOrder.into())
+        Err(ExchangeError::FailedToPlaceOrder)
     }
     pub fn place_limit_buy_order(
         &mut self,
         pair: &str,
         price: Decimal,
         qty: Decimal,
-    ) -> Result<Order, Box<dyn std::error::Error>> {
+    ) -> Result<Order, ExchangeError> {
         self.place_order(
             pair,
             Some(price),
@@ -143,7 +145,7 @@ impl Exchange {
         pair: &str,
         price: Decimal,
         qty: Decimal,
-    ) -> Result<Order, Box<dyn std::error::Error>> {
+    ) -> Result<Order, ExchangeError> {
         self.place_order(
             pair,
             Some(price),
@@ -157,7 +159,7 @@ impl Exchange {
         pair: &str,
         price: Decimal,
         qty: Decimal,
-    ) -> Result<Order, Box<dyn std::error::Error>> {
+    ) -> Result<Order, ExchangeError> {
         self.place_order(
             pair,
             Some(price),
@@ -171,7 +173,7 @@ impl Exchange {
         pair: &str,
         price: Decimal,
         qty: Decimal,
-    ) -> Result<Order, Box<dyn std::error::Error>> {
+    ) -> Result<Order, ExchangeError> {
         self.place_order(
             pair,
             Some(price),
@@ -181,17 +183,14 @@ impl Exchange {
         )
     }
 
-    pub fn tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn tick(&mut self) -> Result<(), ExchangeError> {
         let mut transactions_to_be_added: Vec<Transaction> = vec![];
         let active_orders = self.active_orders.clone();
         for (_, (symbol, price_feed)) in self.price_feeds.clone().into_iter().enumerate() {
             let kline_data = if let Some(kline_data) = price_feed.clone().next() {
                 kline_data
             } else {
-                return Err(Box::try_from(format!(
-                    "{}: no kline data available",
-                    symbol
-                ))?);
+                return Err(ExchangeError::NoKlineDataAvailable);
             };
             let (timestamp, _, high, low, _) = kline_data.get_ohlc();
             for order in &active_orders[&symbol] {
@@ -218,23 +217,17 @@ impl Exchange {
         high: &str,
         low: &str,
         order: &Order,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), ExchangeError> {
         let order_price = if let Some(order_price) = order.price {
             order_price
         } else {
-            return Err(Box::try_from(format!(
-                "{}: no order price available",
-                symbol
-            ))?);
+            return Err(ExchangeError::NoOrderPriceAvailable);
         };
 
         let (base, quote) = if let Ok((_base, _quote)) = Exchange::get_asset_pair(&symbol) {
             (_base, _quote)
         } else {
-            return Err(Box::try_from(format!(
-                "{}: unable to obtain valid base and quote for pair",
-                symbol
-            ))?);
+            return Err(ExchangeError::FailedToObtainAssetPair);
         };
         match order.direction {
             OrderDirection::Buy => Self::tick_handle_buy(
@@ -270,14 +263,11 @@ impl Exchange {
         order_price: Decimal,
         base: &str,
         quote: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), ExchangeError> {
         let decimal_high = if let Ok(decimal_high) = Decimal::from_str_exact(high) {
             decimal_high
         } else {
-            return Err(Box::try_from(format!(
-                "{}: invalid decimal value for high",
-                symbol
-            ))?);
+            return Err(ExchangeError::InvalidPrice);
         };
         if decimal_high > order_price {
             let tx1 = Transaction::new(
@@ -307,14 +297,11 @@ impl Exchange {
         order_price: Decimal,
         base: &str,
         quote: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), ExchangeError> {
         let decimal_low = if let Ok(decimal_low) = Decimal::from_str_exact(low) {
             decimal_low
         } else {
-            return Err(Box::try_from(format!(
-                "{}: invalid decimal value for low",
-                symbol
-            ))?);
+            return Err(ExchangeError::InvalidPrice);
         };
 
         if decimal_low < order_price {
@@ -331,7 +318,7 @@ impl Exchange {
         Ok(())
     }
 
-    pub fn get_asset_pair(pair: &str) -> Result<(&str, &str), Box<dyn error::Error>> {
+    pub fn get_asset_pair(pair: &str) -> Result<(&str, &str), ExchangeError> {
         let quote_list = [
             "AUD", "BIDR", "BKRW", "BNB", "BRL", "BTC", "BUSD", "BVND", "DAI", "DOGE", "DOT",
             "ETH", "EUR", "GBP", "IDRT", "NGN", "PAX", "PLN", "RON", "RUB", "TRX", "TRY", "TUSD",
@@ -352,6 +339,8 @@ impl Exchange {
 
 #[cfg(test)]
 mod test {
+    use crate::exchange::order::OrderStatus;
+    use crate::exchange::price_feed::BinanceKline;
     use super::*;
 
     #[test]
