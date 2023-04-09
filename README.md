@@ -1,3 +1,6 @@
+
+![waketime bage](https://wakatime.com/badge/user/e5cdae17-ff21-447b-88c4-dbcea5d0baa2/project/ee7f2e5f-8fc2-40b2-8bf6-aedc56f2f097.svg?style=for-the-badge)
+
 # Crypto Exchange Simulator
 
 This repository contains the source code for a cryptocurrency exchange simulator, specifically designed to replicate the behavior of Binance. The simulator uses real price data from Binance and allows you to run your trading strategies in a risk-free environment. By hosting an HTTP server, the simulator enables the creation of multiple exchange instances with unique wallets, providing a comprehensive testing platform for your trading algorithms.
