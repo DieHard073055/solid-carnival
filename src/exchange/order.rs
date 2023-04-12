@@ -1,5 +1,6 @@
 use chrono::Utc;
 use rust_decimal::prelude::Decimal;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderType {
@@ -20,8 +21,12 @@ pub enum OrderStatus {
     Filled,
 }
 
+// Create a static atomic counter for order IDs
+static ORDER_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Order {
+    pub id: u64,
     pub ts: i64,
     pub order_type: OrderType,
     pub direction: OrderDirection,
@@ -33,6 +38,7 @@ pub struct Order {
 
 impl Order {
     fn new(
+        id: u64,
         ts: i64,
         order_type: OrderType,
         direction: OrderDirection,
@@ -42,6 +48,7 @@ impl Order {
         status: OrderStatus,
     ) -> Self {
         Order {
+            id,
             ts,
             order_type,
             direction,
@@ -58,8 +65,11 @@ impl Order {
         direction: OrderDirection,
         order_type: OrderType,
     ) -> Self {
+        let id = ORDER_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let ts = Utc::now().timestamp();
         Order::new(
-            Utc::now().timestamp(),
+            id,
+            ts,
             order_type,
             direction,
             String::from(pair),
@@ -104,7 +114,7 @@ impl Order {
             OrderType::Market,
         )
     }
-    pub fn filled(&mut self){
+    pub fn filled(&mut self) {
         self.status = OrderStatus::Filled;
     }
 }
