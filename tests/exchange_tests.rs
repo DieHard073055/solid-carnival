@@ -37,6 +37,7 @@ fn test_create_and_place_exchange_order() {
     ];
 
     let mut price_feed = PriceFeed::new();
+    //custom_kline_data.reverse();
     price_feed.add_price_data(custom_kline_data);
     let mut exchange = Exchange::new()
         .with_capital(vec![
@@ -68,6 +69,6 @@ fn test_create_and_place_exchange_order() {
     assert!(result.is_ok());
 
     let wallets = exchange.get_wallet();
-    assert_eq!(wallets["USDT"], dec!(2));
-    assert_eq!(wallets["BTC"], dec!(0.0));
+    assert_eq!(wallets["USDT"], dec!(1.95));
+    assert_eq!(wallets["BTC"], dec!(1.0));
 }

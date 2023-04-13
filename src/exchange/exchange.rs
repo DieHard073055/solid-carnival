@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::exchange::order::{Order, OrderDirection, OrderType};
-use crate::exchange::price_feed::PriceFeed;
+use crate::exchange::price_feed::{BinanceKline, PriceFeed};
 use crate::exchange::transaction::Transaction;
 use crate::exchange::wallet::Wallet;
 use rust_decimal::prelude::Decimal;
@@ -81,8 +81,17 @@ impl Exchange {
         self.price_feeds.insert(symbol, price_feed);
         self
     }
+    pub fn price_feed_next(&mut self, symbol: &str) -> Option<BinanceKline> {
+        if let Some(price_feed) = self.price_feeds.get_mut(symbol) {
+            return price_feed.next();
+        }
+        None
+    }
     pub fn get_wallet(&self) -> &HashMap<String, Decimal> {
         &self.wallet.get_wallets()
+    }
+    pub fn get_transactions(&self) -> &Vec<Transaction> {
+        &self.wallet.get_transactions()
     }
     pub fn get_orders(&self) -> &HashMap<String, Vec<Order>> {
         &self.active_orders
@@ -186,29 +195,29 @@ impl Exchange {
     pub fn tick(&mut self) -> Result<(), ExchangeError> {
         let mut transactions_to_be_added: Vec<Transaction> = vec![];
         let active_orders = self.active_orders.clone();
-        for (_, (symbol, price_feed)) in self.price_feeds.clone().into_iter().enumerate() {
-            let kline_data = price_feed
-                .clone()
-                .next()
-                .ok_or(ExchangeError::NoKlineDataAvailable)?;
-
-            let mut executed_orders: Vec<u64> = vec![];
-            let (timestamp, _, high, low, _) = kline_data.get_ohlc();
-            for order in &active_orders[&symbol] {
-                let is_executed = Self::tick_handle_order(
-                    &mut transactions_to_be_added,
-                    &symbol,
-                    timestamp,
-                    high,
-                    low,
-                    order,
-                )?;
-                if is_executed {
-                    executed_orders.push(order.id);
+        for symbol in self.price_feeds.clone().keys() {
+            if let Some(kline_data) = self.price_feed_next(symbol.as_str()) {
+                let mut executed_orders: Vec<u64> = vec![];
+                let (timestamp, _, high, low, _) = kline_data.get_ohlc();
+                for order in &active_orders[symbol] {
+                    let is_executed = Self::tick_handle_order(
+                        &mut transactions_to_be_added,
+                        &symbol,
+                        timestamp,
+                        high,
+                        low,
+                        order,
+                    )?;
+                    if is_executed {
+                        executed_orders.push(order.id);
+                    }
                 }
-            }
 
-            self.active_orders.get_mut(&symbol).unwrap().retain(|order| !executed_orders.contains(&order.id));
+                self.active_orders
+                    .get_mut(symbol)
+                    .unwrap()
+                    .retain(|order| !executed_orders.contains(&order.id));
+            }
         }
 
         for tx in transactions_to_be_added {
@@ -316,7 +325,7 @@ impl Exchange {
                 (order.qty * order_price) * dec!(-1),
                 transactions_to_be_added,
             );
-            return Ok(true)
+            return Ok(true);
         }
         Ok(false)
     }
@@ -481,5 +490,4 @@ mod test {
         assert_eq!(wallets["BTC"], dec!(0.0));
         assert_eq!(wallets["USDT"], dec!(3.0));
     }
-
 }

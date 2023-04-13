@@ -40,6 +40,9 @@ impl Wallet {
     pub fn get_wallets(&self) -> &HashMap<String, Decimal> {
         &self.wallets
     }
+    pub fn get_transactions(&self) -> &Vec<Transaction> {
+        &self.transactions
+    }
     fn update_wallet(&mut self, tx: &Transaction) {
         let symbol = tx.get_symbol();
         let qty = tx.get_qty();
