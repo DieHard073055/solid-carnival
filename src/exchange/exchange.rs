@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::exchange::order::{Order, OrderDirection, OrderType};
-use crate::exchange::price_feed::PriceFeed;
+use crate::exchange::price_feed::{BinanceKline, PriceFeed};
 use crate::exchange::transaction::Transaction;
 use crate::exchange::wallet::Wallet;
 use rust_decimal::prelude::Decimal;
@@ -81,8 +81,17 @@ impl Exchange {
         self.price_feeds.insert(symbol, price_feed);
         self
     }
+    pub fn price_feed_next(&mut self, symbol: &str) -> Option<BinanceKline> {
+        if let Some(price_feed) = self.price_feeds.get_mut(symbol) {
+            return price_feed.next();
+        }
+        None
+    }
     pub fn get_wallet(&self) -> &HashMap<String, Decimal> {
         &self.wallet.get_wallets()
+    }
+    pub fn get_transactions(&self) -> &Vec<Transaction> {
+        &self.wallet.get_transactions()
     }
     pub fn get_orders(&self) -> &HashMap<String, Vec<Order>> {
         &self.active_orders
@@ -186,24 +195,31 @@ impl Exchange {
     pub fn tick(&mut self) -> Result<(), ExchangeError> {
         let mut transactions_to_be_added: Vec<Transaction> = vec![];
         let active_orders = self.active_orders.clone();
-        for (_, (symbol, price_feed)) in self.price_feeds.clone().into_iter().enumerate() {
-            let kline_data = price_feed
-                .clone()
-                .next()
-                .ok_or(ExchangeError::NoKlineDataAvailable)?;
+        for symbol in self.price_feeds.clone().keys() {
+            if let Some(kline_data) = self.price_feed_next(symbol.as_str()) {
+                let mut executed_orders: Vec<u64> = vec![];
+                let (timestamp, _, high, low, _) = kline_data.get_ohlc();
+                for order in &active_orders[symbol] {
+                    let is_executed = Self::tick_handle_order(
+                        &mut transactions_to_be_added,
+                        &symbol,
+                        timestamp,
+                        high,
+                        low,
+                        order,
+                    )?;
+                    if is_executed {
+                        executed_orders.push(order.id);
+                    }
+                }
 
-            let (timestamp, _, high, low, _) = kline_data.get_ohlc();
-            for order in &active_orders[&symbol] {
-                Self::tick_handle_order(
-                    &mut transactions_to_be_added,
-                    &symbol,
-                    timestamp,
-                    high,
-                    low,
-                    order,
-                )?
+                self.active_orders
+                    .get_mut(symbol)
+                    .unwrap()
+                    .retain(|order| !executed_orders.contains(&order.id));
             }
         }
+
         for tx in transactions_to_be_added {
             self.wallet.add(&tx);
         }
@@ -217,7 +233,7 @@ impl Exchange {
         high: &str,
         low: &str,
         order: &Order,
-    ) -> Result<(), ExchangeError> {
+    ) -> Result<bool, ExchangeError> {
         let order_price = order.price.ok_or(ExchangeError::NoOrderPriceAvailable)?;
         let (base, quote) = Exchange::get_asset_pair(&symbol)?;
         match order.direction {
@@ -229,7 +245,7 @@ impl Exchange {
                 order_price,
                 base,
                 quote,
-            )?,
+            ),
             OrderDirection::Sell => Self::tick_handle_sell(
                 &mut transactions_to_be_added,
                 timestamp,
@@ -238,9 +254,8 @@ impl Exchange {
                 order_price,
                 base,
                 quote,
-            )?,
+            ),
         }
-        Ok(())
     }
     fn create_transaction_and_add_to_list(
         ts: i64,
@@ -251,6 +266,7 @@ impl Exchange {
     ) {
         transactions_to_be_added.push(Transaction::new(ts, symbol, order_price, qty));
     }
+
     fn tick_handle_sell(
         transactions_to_be_added: &mut Vec<Transaction>,
         timestamp: i64,
@@ -259,7 +275,7 @@ impl Exchange {
         order_price: Decimal,
         base: &str,
         quote: &str,
-    ) -> Result<(), ExchangeError> {
+    ) -> Result<bool, ExchangeError> {
         let decimal_high =
             Decimal::from_str_exact(high_price_str).map_err(|_| ExchangeError::InvalidPrice)?;
         if decimal_high > order_price {
@@ -277,8 +293,9 @@ impl Exchange {
                 order.qty * order_price,
                 transactions_to_be_added,
             );
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 
     fn tick_handle_buy(
@@ -289,7 +306,7 @@ impl Exchange {
         order_price: Decimal,
         base: &str,
         quote: &str,
-    ) -> Result<(), ExchangeError> {
+    ) -> Result<bool, ExchangeError> {
         let decimal_low =
             Decimal::from_str_exact(low_price_str).map_err(|_| ExchangeError::InvalidPrice)?;
 
@@ -308,8 +325,9 @@ impl Exchange {
                 (order.qty * order_price) * dec!(-1),
                 transactions_to_be_added,
             );
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 
     pub fn get_asset_pair(pair: &str) -> Result<(&str, &str), ExchangeError> {
@@ -431,6 +449,7 @@ mod test {
 
         let wallets = exchange.get_wallet();
         assert_eq!(wallets["BTC"], dec!(2.0));
+        assert_eq!(wallets["USDT"], dec!(0.0));
     }
     #[test]
     fn test_tick_with_limit_sell() {
