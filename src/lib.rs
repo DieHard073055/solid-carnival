@@ -21,12 +21,10 @@ struct Exchanges {
     exchanges: HashMap<String, Exchange>,
 }
 impl Exchanges {
-    fn create_new_exchange(&mut self) -> &str {
-        let mut exchange = Exchange::new();
-
-        let exchange_id = exchange.get_instance_id();
-        self.exchanges.insert(exchange_id.to_string(), exchange);
-        exchange_id
+    fn create_new_exchange(&mut self) -> String {
+        let instance_id = Uuid::new_v4().hyphenated().to_string();
+        self.exchanges.insert(instance_id.clone(), Exchange::new());
+        instance_id
     }
     fn mut_unwrap_exchange_from_instance(
         &mut self,
