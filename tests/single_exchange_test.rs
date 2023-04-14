@@ -39,12 +39,12 @@ fn test_create_and_place_exchange_order() {
     let mut price_feed = PriceFeed::new();
     //custom_kline_data.reverse();
     price_feed.add_price_data(custom_kline_data);
-    let mut exchange = Exchange::new()
-        .with_capital(vec![
-            ("BTC".to_string(), dec!(1.0)),
-            ("USDT".to_string(), dec!(1.0)),
-        ])
-        .add_price_feed("BTCUSDT".to_string(), price_feed);
+    let mut exchange = Exchange::new();
+    exchange.with_capital(vec![
+        ("BTC".to_string(), dec!(1.0)),
+        ("USDT".to_string(), dec!(1.0)),
+    ]);
+    exchange.add_price_feed("BTCUSDT".to_string(), price_feed);
 
     // Place a limit sell order
     let _ = exchange
