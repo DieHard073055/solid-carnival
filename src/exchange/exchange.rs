@@ -8,6 +8,7 @@ use crate::exchange::wallet::Wallet;
 use rust_decimal::prelude::Decimal;
 use rust_decimal_macros::dec;
 use std::fmt::Debug;
+use uuid::Uuid;
 /*
 binance mock exchange ?
 
@@ -25,6 +26,7 @@ pub struct Exchange {
     active_orders: HashMap<String, Vec<Order>>,
     wallet: Wallet,
     price_feeds: HashMap<String, PriceFeed>,
+    instance_id: String,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -51,9 +53,10 @@ impl Exchange {
             active_orders: HashMap::new(),
             wallet: Wallet::new(),
             price_feeds: HashMap::new(),
+            instance_id: Uuid::new_v4().hyphenated().to_string(),
         }
     }
-    pub fn with_capital(mut self, funding: Vec<(String, Decimal)>) -> Self {
+    pub fn with_capital(&mut self, funding: Vec<(String, Decimal)>) -> Self {
         for (symbol, qty) in funding.iter() {
             self.wallet.add(&Transaction::new(
                 0i64,
@@ -65,7 +68,7 @@ impl Exchange {
         self
     }
     pub fn with_price_feed(
-        mut self,
+        &mut self,
         symbol: String,
         interval: String,
         limit: i32,
@@ -95,6 +98,9 @@ impl Exchange {
     }
     pub fn get_orders(&self) -> &HashMap<String, Vec<Order>> {
         &self.active_orders
+    }
+    pub fn get_instance_id(&self) -> &str {
+        self.instance_id.as_str()
     }
     pub fn place_order(
         &mut self,
