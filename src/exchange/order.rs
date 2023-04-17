@@ -65,7 +65,7 @@ impl Order {
         direction: OrderDirection,
         order_type: OrderType,
     ) -> Self {
-        let id = ORDER_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let id = ORDER_ID_COUNTER.fetch_add(1, Ordering::Release);
         let ts = Utc::now().timestamp();
         Order::new(
             id,

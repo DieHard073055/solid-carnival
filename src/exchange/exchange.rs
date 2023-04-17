@@ -53,7 +53,7 @@ impl Exchange {
             price_feeds: HashMap::new(),
         }
     }
-    pub fn with_capital(mut self, funding: Vec<(String, Decimal)>) -> Self {
+    pub fn with_capital(&mut self, funding: Vec<(String, Decimal)>) -> &mut Self {
         for (symbol, qty) in funding.iter() {
             self.wallet.add(&Transaction::new(
                 0i64,
@@ -65,11 +65,11 @@ impl Exchange {
         self
     }
     pub fn with_price_feed(
-        mut self,
+        &mut self,
         symbol: String,
         interval: String,
         limit: i32,
-    ) -> Result<Self, ExchangeError> {
+    ) -> Result<&mut Self, ExchangeError> {
         self.price_feeds
             .entry(symbol.clone())
             .or_insert(PriceFeed::new())
@@ -77,7 +77,7 @@ impl Exchange {
             .map_err(|_| ExchangeError::NoPriceFeed)?;
         Ok(self)
     }
-    pub fn add_price_feed(mut self, symbol: String, price_feed: PriceFeed) -> Self {
+    pub fn add_price_feed(&mut self, symbol: String, price_feed: PriceFeed) -> &mut Self {
         self.price_feeds.insert(symbol, price_feed);
         self
     }
@@ -356,15 +356,18 @@ mod test {
 
     #[test]
     fn test_initialize_exchange_with_capital() {
-        let ex = Exchange::new().with_capital(vec![(String::from("BTC"), dec!(12.0))]);
+        let mut ex = Exchange::new();
+        ex.with_capital(vec![(String::from("BTC"), dec!(12.0))]);
         let wallets = ex.get_wallet();
         assert_eq!(wallets.get("BTC"), Some(&dec!(12.0)));
 
-        let ex = Exchange::new().with_capital(vec![(String::from("USDC"), dec!(12_000))]);
+        let mut ex = Exchange::new();
+        ex.with_capital(vec![(String::from("USDC"), dec!(12_000))]);
         let wallets = ex.get_wallet();
         assert_eq!(wallets.get("USDC"), Some(&dec!(12_000)));
 
-        let ex = Exchange::new().with_capital(vec![
+        let mut ex = Exchange::new();
+            ex.with_capital(vec![
             (String::from("BTC"), dec!(3)),
             (String::from("ETH"), dec!(40)),
             (String::from("USDC"), dec!(3_000)),
@@ -377,7 +380,8 @@ mod test {
 
     #[test]
     fn test_place_limit_buy_order() {
-        let mut ex = Exchange::new().with_capital(vec![(String::from("BTC"), dec!(12.0))]);
+        let mut ex = Exchange::new();
+            ex.with_capital(vec![(String::from("BTC"), dec!(12.0))]);
         let wallets = ex.get_wallet();
         assert_eq!(wallets.get("BTC"), Some(&dec!(12.0)));
 
@@ -431,12 +435,12 @@ mod test {
 
         let mut price_feed = PriceFeed::new();
         price_feed.add_price_data(custom_kline_data);
-        let mut exchange = Exchange::new()
-            .with_capital(vec![
+        let mut exchange = Exchange::new();
+        exchange.with_capital(vec![
                 ("BTC".to_string(), dec!(1.0)),
                 ("USDT".to_string(), dec!(1.0)),
-            ])
-            .add_price_feed("BTCUSDT".to_string(), price_feed);
+            ]);
+        exchange.add_price_feed("BTCUSDT".to_string(), price_feed);
 
         // Place a limit buy order
         let _ = exchange
@@ -470,8 +474,8 @@ mod test {
 
         let mut price_feed = PriceFeed::new();
         price_feed.add_price_data(custom_kline_data);
-        let mut exchange = Exchange::new()
-            .with_capital(vec![
+        let mut exchange = Exchange::new();
+        exchange.with_capital(vec![
                 ("BTC".to_string(), dec!(1.0)),
                 ("USDT".to_string(), dec!(1.0)),
             ])
