@@ -1,5 +1,12 @@
 pub mod exchange;
 
+/*
+TODO:
+write unit tests for the code in this file.
+something else is code coverage not related to the file.
+get the PR done asap. Next week is the next project.
+
+ */
 use thiserror::Error;
 
 use crate::exchange::exchange::{Exchange, ExchangeError};
@@ -21,12 +28,17 @@ struct Exchanges {
     exchanges: HashMap<String, Exchange>,
 }
 impl Exchanges {
-    fn create_new_exchange(&mut self) -> String {
+    pub fn new() -> Self {
+        Self {
+            exchanges: HashMap::new(),
+        }
+    }
+    pub fn create_new_exchange(&mut self) -> String {
         let instance_id = Uuid::new_v4().hyphenated().to_string();
         self.exchanges.insert(instance_id.clone(), Exchange::new());
         instance_id
     }
-    fn mut_unwrap_exchange_from_instance(
+    pub fn mut_unwrap_exchange_from_instance(
         &mut self,
         instance_id: &str,
     ) -> Result<&mut Exchange, ExchangesError> {
@@ -36,7 +48,17 @@ impl Exchanges {
             Err(ExchangesError::InvalidExchangeId)
         }
     }
-    fn add_capital(
+    pub fn unwrap_exchange_from_instance(
+        &self,
+        instance_id: &str,
+    ) -> Result<&Exchange, ExchangesError> {
+        if let Some(exchange) = self.exchanges.get(instance_id) {
+            Ok(exchange)
+        } else {
+            Err(ExchangesError::InvalidExchangeId)
+        }
+    }
+    pub fn add_capital(
         &mut self,
         instance_id: &str,
         symbol: &str,
@@ -46,7 +68,7 @@ impl Exchanges {
         exchange.with_capital(vec![(symbol.to_string(), amount)]);
         Ok(())
     }
-    fn add_price_feed(
+    pub fn add_price_feed(
         &mut self,
         instance_id: &str,
         symbol: &str,
@@ -57,7 +79,7 @@ impl Exchanges {
         exchange.with_price_feed(symbol.to_string(), interval.to_string(), limit)?;
         Ok(())
     }
-    fn tick(
+    pub fn tick(
         &mut self,
         instance_id: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -69,94 +91,117 @@ impl Exchanges {
 
 #[cfg(test)]
 mod test {
-    use crate::exchange::order::{Order, OrderDirection, OrderType};
-    use chrono::format::Numeric::Timestamp;
-    use rust_decimal::prelude::ToPrimitive;
-    use rust_decimal::Decimal;
-    use rust_decimal_macros::dec;
-    use std::io::Write;
-    use std::task::Context;
-    use uuid::Uuid;
+    use super::*;
+    use crate::exchange::order::OrderStatus;
+    use crate::exchange::price_feed::BinanceKline;
 
-    fn fill_from_str(mut bytes: &mut [u8], s: &str) {
-        bytes.write(s.as_bytes()).unwrap();
-    }
-    fn create_order_uuid(
-        pair: &str,
-        price: Decimal,
-        qty: Decimal,
-        direction: OrderDirection,
-        order_type: OrderType,
-    ) {
-        let order = Order::new_order(pair, Some(price), qty, direction, order_type);
-        let order_direction = if order.direction == OrderDirection::Buy {
-            0u8
-        } else {
-            1u8
-        };
-        let order_type = if order.order_type == OrderType::Limit {
-            0u8
-        } else {
-            1u8
-        };
-        let order_price = order.price.unwrap_or(dec!(0));
-        let order_details = format!(
-            "{:}{:}{:}{:}{:}{:}",
-            order.ts, order.pair, order_price, order.qty, order_direction, order_type
-        );
-        let mut order_details_bytes: [u8; 16] = [0; 16];
-        fill_from_str(&mut order_details_bytes, order_details.as_str());
-        println!("{:}", order_details);
-        println!("{:?}", order_details.as_bytes());
-        println!("{:?}", order_details_bytes);
-        let order_id = Uuid::from_slice(&order_details_bytes).unwrap();
-        println!("order_id : {:}", order_id);
-    }
     #[test]
-    fn test_gen_uuid() {
-        create_order_uuid(
-            "BTCUSDT",
-            dec!(19000),
-            dec!(1),
-            OrderDirection::Buy,
-            OrderType::Limit,
-        );
-        create_order_uuid(
-            "BTCUSDT",
-            dec!(19000),
-            dec!(1),
-            OrderDirection::Buy,
-            OrderType::Limit,
-        );
-        create_order_uuid(
-            "BTCUSDT",
-            dec!(19500),
-            dec!(1),
-            OrderDirection::Buy,
-            OrderType::Limit,
-        );
-        create_order_uuid(
-            "BTCUSDT",
-            dec!(19000),
-            dec!(0.1),
-            OrderDirection::Buy,
-            OrderType::Limit,
-        );
-        create_order_uuid(
-            "BTCUSDT",
-            dec!(19000),
-            dec!(0.1),
-            OrderDirection::Sell,
-            OrderType::Limit,
-        );
-        create_order_uuid(
-            "BTCUSDT",
-            dec!(19000),
-            dec!(1),
-            OrderDirection::Buy,
-            OrderType::Market,
-        );
+    fn test_create_new_exchange() {
+        let mut exchanges = Exchanges::new();
+        let instance_id = exchanges.create_new_exchange();
 
-        // println!("order_id : {:}", order_id );
+        assert!(exchanges
+            .unwrap_exchange_from_instance(&instance_id)
+            .is_ok());
+    }
+
+    #[test]
+    fn test_mut_unwrap_exchange_from_instance() {
+        let mut exchanges = Exchanges::new();
+        let instance_id = exchanges.create_new_exchange();
+
+        assert!(exchanges
+            .mut_unwrap_exchange_from_instance(&instance_id)
+            .is_ok());
+    }
+
+    #[test]
+    fn test_unwrap_exchange_from_instance_error() {
+        let exchanges = Exchanges::new();
+        let instance_id = "invalid_id";
+
+        assert!(exchanges
+            .unwrap_exchange_from_instance(instance_id)
+            .is_err());
+    }
+
+    #[test]
+    fn test_add_capital() {
+        let mut exchanges = Exchanges::new();
+        let instance_id = exchanges.create_new_exchange();
+
+        let result = exchanges.add_capital(&instance_id, "BTC", dec!(12.0));
+        assert!(result.is_ok());
+
+        let exchange = exchanges
+            .unwrap_exchange_from_instance(&instance_id)
+            .unwrap();
+        let wallets = exchange.get_wallet();
+        assert_eq!(wallets.get("BTC"), Some(&dec!(12.0)));
+    }
+
+    // #[test]
+    // fn test_add_price_feed() {
+    //     let mut exchanges = Exchanges::new();
+    //     let instance_id = exchanges.create_new_exchange();
+    //
+    //     let result = exchanges.add_price_feed(&instance_id, "BTCUSDT", "1m", 10);
+    //     assert!(result.is_ok());
+    //
+    //     let exchange = exchanges
+    //         .unwrap_exchange_from_instance(&instance_id)
+    //         .unwrap();
+    //     let price_feed = exchange.get_price_feed("BTCUSDT").unwrap();
+    //     assert_eq!(price_feed.get_data().len(), 10);
+    // }
+
+    #[test]
+    fn test_tick() {
+        let mut exchanges = Exchanges::new();
+        let instance_id = exchanges.create_new_exchange();
+        let custom_kline_data = vec![BinanceKline::new(
+            1626578400000,
+            "1.0000000",
+            "2.0000000",
+            "0.08000000",
+            "0.15000000",
+            "5000.00000000",
+            1626578500000,
+            "750.00000000",
+            10,
+            "2500.00000000",
+            "2500.00000000",
+            "0.0",
+        )];
+
+        let mut price_feed = PriceFeed::new();
+        price_feed.add_price_data(custom_kline_data);
+
+        let mut exchange = Exchange::new();
+        exchange
+            .with_capital(vec![
+                ("BTC".to_string(), dec!(1.0)),
+                ("USDT".to_string(), dec!(1.0)),
+            ])
+            .add_price_feed("BTCUSDT".to_string(), price_feed);
+        exchanges.exchanges.insert(instance_id.clone(), exchange);
+
+        // Place a limit buy order
+        let exchange = exchanges
+            .mut_unwrap_exchange_from_instance(&instance_id)
+            .unwrap();
+        let _ = exchange
+            .place_limit_buy_order("BTCUSDT", dec!(1), dec!(1))
+            .unwrap();
+
+        let result = exchanges.tick(&instance_id);
+        assert!(result.is_ok());
+
+        let exchange = exchanges
+            .unwrap_exchange_from_instance(&instance_id)
+            .unwrap();
+        let wallets = exchange.get_wallet();
+        assert_eq!(wallets["BTC"], dec!(2.0));
+        assert_eq!(wallets["USDT"], dec!(0.0));
     }
 }
