@@ -140,21 +140,6 @@ mod test {
         assert_eq!(wallets.get("BTC"), Some(&dec!(12.0)));
     }
 
-    // #[test]
-    // fn test_add_price_feed() {
-    //     let mut exchanges = Exchanges::new();
-    //     let instance_id = exchanges.create_new_exchange();
-    //
-    //     let result = exchanges.add_price_feed(&instance_id, "BTCUSDT", "1m", 10);
-    //     assert!(result.is_ok());
-    //
-    //     let exchange = exchanges
-    //         .unwrap_exchange_from_instance(&instance_id)
-    //         .unwrap();
-    //     let price_feed = exchange.get_price_feed("BTCUSDT").unwrap();
-    //     assert_eq!(price_feed.get_data().len(), 10);
-    // }
-
     #[test]
     fn test_tick() {
         let mut exchanges = Exchanges::new();
