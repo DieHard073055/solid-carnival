@@ -1,12 +1,5 @@
 pub mod exchange;
 
-/*
-TODO:
-write unit tests for the code in this file.
-something else is code coverage not related to the file.
-get the PR done asap. Next week is the next project.
-
- */
 use thiserror::Error;
 
 use crate::exchange::exchange::{Exchange, ExchangeError};
